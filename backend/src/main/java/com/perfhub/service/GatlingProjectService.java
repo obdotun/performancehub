@@ -56,14 +56,16 @@ public class GatlingProjectService {
         Path projectDir    = Path.of(projectsRoot, sanitize(req.getName()));
 
         if (!effectiveRoot.equals(extractDir)) {
-            // Renommer le sous-dossier racine vers le chemin final
             Files.move(effectiveRoot, projectDir, StandardCopyOption.REPLACE_EXISTING);
-            deleteDirectory(extractDir); // supprimer le dossier temporaire vide
+            deleteDirectory(extractDir);
         } else {
             Files.move(extractDir, projectDir, StandardCopyOption.REPLACE_EXISTING);
         }
 
         log.info("Racine effective du projet : {}", projectDir);
+
+        // Injecter le build.gradle PerfHub-compatible
+        injectBuildGradle(projectDir);
 
         GatlingProject project = GatlingProject.builder()
                 .name(req.getName())
@@ -101,6 +103,9 @@ public class GatlingProjectService {
         File targetDir = Path.of(projectsRoot, sanitize(req.getName())).toFile();
         gitService.cloneOrPull(req.getRepoUrl(), req.getBranch(), req.getUsername(), req.getToken(), targetDir);
 
+        // Injecter le build.gradle PerfHub-compatible
+        injectBuildGradle(targetDir.toPath());
+
         GatlingProject project = GatlingProject.builder()
                 .name(req.getName())
                 .description(req.getDescription())
@@ -122,6 +127,10 @@ public class GatlingProjectService {
         }
         gitService.cloneOrPull(project.getRepoUrl(), project.getBranch(), username, token,
                 new File(project.getLocalPath()));
+
+        // Re-injecter le build.gradle après chaque pull
+        injectBuildGradle(Path.of(project.getLocalPath()));
+
         project.setUpdatedAt(java.time.LocalDateTime.now());
         projectRepo.save(project);
     }
@@ -255,6 +264,63 @@ public class GatlingProjectService {
                     .replaceAll("\\.(java|scala)$", "");
             return relative;
         } catch (Exception e) { return null; }
+    }
+
+    /**
+     * Injecte un build.gradle PerfHub-compatible dans le projet Gatling.
+     *
+     * Ce fichier :
+     * - Configure le plugin io.gatling.gradle 3.9.0.2
+     * - Filtre les simulations via la propriété -PsimulationClass
+     *   passée par PerfHub au moment du lancement
+     *
+     * Il remplace le build.gradle existant pour garantir la compatibilité.
+     * Le build.gradle original est sauvegardé en build.gradle.original.
+     */
+    private void injectBuildGradle(Path projectDir) {
+        Path buildGradle = projectDir.resolve("build.gradle");
+        Path backup      = projectDir.resolve("build.gradle.original");
+
+        try {
+            // Sauvegarder l'original si pas déjà fait
+            if (Files.exists(buildGradle) && !Files.exists(backup)) {
+                Files.copy(buildGradle, backup, StandardCopyOption.REPLACE_EXISTING);
+                log.info("build.gradle original sauvegardé → build.gradle.original");
+            }
+
+            String buildGradleContent = """
+plugins {
+    id 'java'
+    id 'io.gatling.gradle' version '3.9.0.2'
+}
+
+gatling {
+    simulations {
+        // PerfHub injecte la simulation via : -PsimulationClass=com.example.MySimulation
+        // La closure convertit le FQCN en chemin de fichier pour le filtre Gatling
+        def sim = project.findProperty("simulationClass")
+        if (sim) {
+            include sim.replace('.', '/') + '.java'
+            include sim.replace('.', '/') + '.scala'
+        }
+    }
+    logLevel = 'WARN'
+    logHttp = 'FAILURES'
+    enterprise {
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+""";
+
+            Files.writeString(buildGradle, buildGradleContent);
+            log.info("build.gradle PerfHub injecté dans : {}", projectDir);
+
+        } catch (IOException e) {
+            log.warn("Impossible d'injecter build.gradle dans {} : {}", projectDir, e.getMessage());
+        }
     }
 
     private String sanitize(String name) {

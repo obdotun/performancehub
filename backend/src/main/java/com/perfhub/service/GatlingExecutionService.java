@@ -188,16 +188,29 @@ public class GatlingExecutionService {
                 cmd.add("cmd.exe");
                 cmd.add("/c");
             }
-            cmd.add(gradlew.toAbsolutePath().toString());
+            cmd.add(gradlew.toAbsolutePath().toString()); //---
             // Le plugin Gatling Gradle crée une tâche individuelle par simulation :
             // "gatlingRun-{FQCN}" — seule façon de n'exécuter QU'UNE simulation.
             // "gatlingRun" sans suffixe lance TOUTES les simulations trouvées.
-            String simulationTask = "gatlingRun-" + req.getSimulationClass();
+           /* String simulationTask = "gatlingRun-" + req.getSimulationClass();
             log.info(">>> Tâche Gradle : {}", simulationTask);
 
             cmd.add("--no-daemon");
             cmd.add(simulationTask);
-            cmd.add("-Dgatling.core.resultsFolder=" + reportOutputDir.toAbsolutePath());
+            cmd.add("-Dgatling.core.resultsFolder=" + reportOutputDir.toAbsolutePath()); *///----
+            log.info(">>> Simulation sélectionnée : {}", req.getSimulationClass());
+
+            // -PsimulationClass → propriété Gradle lue dans build.gradle via
+            // project.findProperty("simulationClass")
+            //
+            // Le build.gradle filtre avec :
+            //   include sim.replace('.', '/') + '.java'
+            // ce qui convertit le FQCN en chemin de fichier valide.
+            cmd.add("--no-daemon");
+            cmd.add("gatlingRun");
+            cmd.add("-PsimulationClass=" + req.getSimulationClass());
+            cmd.add("-Dgatling.core.resultsFolder=" + reportOutputDir.toAbsolutePath()
+                    .toString().replace('\\', '/').replace('\\', '/'));
 
         } else if (Files.exists(pom)) {
             cmd.add(isWindows ? "mvn.cmd" : "mvn");
