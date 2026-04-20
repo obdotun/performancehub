@@ -1,0 +1,12 @@
+backend/.gradle
+backend/.idea
+backend/build
+backend/data/
+backend/storage/
+backend/*.log
+backend/*.class
+
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
