@@ -18,7 +18,8 @@ import LogConsole from '../components/LogConsole'
 import MetricCard from '../components/MetricCard'
 import dayjs from 'dayjs'
 
-const REPORT_BASE = 'http://localhost:8085/api/reports'
+const REPORT_BASE         = 'http://localhost:8085/api/reports'
+const PROJECT_REPORT_BASE = 'http://localhost:8085/api/project-reports'
 
 export default function RunDetailPage() {
   const { id } = useParams()
@@ -71,10 +72,25 @@ export default function RunDetailPage() {
     return () => clearInterval(interval)
   }, [run?.status])
 
-  if (loading) return <LinearProgress />
-  if (!run)    return <Alert severity="error">Run introuvable.</Alert>
+  if (!id || isNaN(Number(id))) {
+    return <Alert severity="error">ID de run invalide : {id}</Alert>
+  }
 
-  const reportUrl = run.reportPath ? `${REPORT_BASE}/${run.reportPath}/index.html` : null
+  if (loading) return <LinearProgress />
+  if (!run) return (
+    <Alert severity="error" sx={{ m: 2 }}>
+      Run introuvable ou accès refusé (ID : {id})
+    </Alert>
+  )
+
+  // reportPath peut être :
+  // - "run-1/simulation-name" → storage/reports/ (nouveau format)
+  // - null → anciens runs : fallback via /api/project-reports/{runId}
+  const reportUrl = run.reportPath
+    ? `${REPORT_BASE}/${run.reportPath}/index.html`
+    : run.status === 'SUCCESS'
+      ? `${PROJECT_REPORT_BASE}/${run.id}/index.html`
+      : null
   const duration  = run.durationSeconds
     ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s` : '—'
   const failRate  = run.totalRequests

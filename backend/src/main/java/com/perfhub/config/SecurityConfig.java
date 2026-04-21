@@ -2,10 +2,10 @@ package com.perfhub.config;
 
 import com.perfhub.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -29,12 +29,20 @@ import java.util.List;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
+
+    @Autowired
+    public SecurityConfig(@Lazy JwtAuthFilter jwtAuthFilter,
+                          UserDetailsService userDetailsService,
+                          PasswordEncoder passwordEncoder) {
+        this.jwtAuthFilter    = jwtAuthFilter;
+        this.userDetailsService = userDetailsService;
+        this.passwordEncoder  = passwordEncoder;
+    }
 
     /**
      * Bypass TOTAL de Spring Security pour ces endpoints.
@@ -46,6 +54,7 @@ public class SecurityConfig {
                 "/api/auth/login",
                 "/api/auth/register",
                 "/api/reports/**",
+                "/api/project-reports/**",
                 "/ws/**",
                 "/ws-native/**",
                 "/h2-console/**"
@@ -78,7 +87,7 @@ public class SecurityConfig {
                         })
                 )
 
-                .headers(h -> h.frameOptions(fo -> fo.sameOrigin()))
+                .headers(h -> h.frameOptions(fo -> fo.disable()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

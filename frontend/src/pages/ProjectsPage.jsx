@@ -38,13 +38,20 @@ export default function ProjectsPage() {
   useEffect(load, [])
 
   const fetchBranches = async () => {
-    if (!form.repoUrl || !form.username || !form.token) return
+    if (!form.repoUrl || !form.username || !form.token) {
+      setError('Veuillez renseigner l\'URL, le nom d\'utilisateur et le token avant de récupérer les branches.')
+      return
+    }
+    setError('')
     try {
       const data = await listBranches({ repoUrl: form.repoUrl, username: form.username, token: form.token })
       const list = Array.isArray(data) ? data : []
       setBranches(list)
-      if (list.length > 0 && !form.branch) setForm(f => ({ ...f, branch: list[0] }))
-    } catch { setBranches([]) }
+      if (list.length > 0) setForm(f => ({ ...f, branch: f.branch || list[0] }))
+    } catch (e) {
+      setError(e.message ?? 'Impossible de récupérer les branches. Vérifiez vos credentials et l\'URL.')
+      setBranches([])
+    }
   }
 
   const handleSubmit = async () => {

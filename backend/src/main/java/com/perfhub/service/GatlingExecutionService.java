@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.*;
 import java.nio.file.*;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -110,18 +111,25 @@ public class GatlingExecutionService {
             broadcast(runId, "[PerfHub] Exit code : " + exitCode);
 
             if (exitCode == 0) {
-                // Chercher rapport dans plusieurs endroits
+                // Le plugin Gradle génère toujours le rapport dans build/reports/gatling/
+                // On le copie vers storage/reports/run-{id}/ pour que PerfHub puisse le servir
                 Optional<Path> reportSubDir = findGatlingReport(projectPath, reportOutputDir);
                 if (reportSubDir.isPresent()) {
-                    resultParser.parseAndUpdate(run, reportSubDir.get());
+                    Path source      = reportSubDir.get();
+                    Path destination = reportOutputDir.resolve(source.getFileName());
+                    copyDirectory(source, destination);
+                    log.info(">>> Rapport copié : {} → {}", source, destination);
+
+                    resultParser.parseAndUpdate(run, destination);
+
                     String rel = Path.of(reportsRoot).toAbsolutePath()
-                            .relativize(reportSubDir.get()).toString()
+                            .relativize(destination).toString()
                             .replace('\\', '/');
                     run.setReportPath(rel);
-                    log.info(">>> Rapport trouvé : {}", rel);
-                    broadcast(runId, "[PerfHub] ✅ Rapport : " + rel);
+                    log.info(">>> Rapport disponible : storage/reports/{}", rel);
+                    broadcast(runId, "[PerfHub] ✅ Rapport disponible");
                 } else {
-                    log.warn(">>> Aucun rapport Gatling trouvé dans {} ni dans build/reports/gatling/", reportOutputDir);
+                    log.warn(">>> Aucun rapport Gatling trouvé dans build/reports/gatling/");
                     broadcast(runId, "[PerfHub] ⚠️ Aucun rapport HTML trouvé");
                 }
                 run.setStatus(RunStatus.SUCCESS);
@@ -188,16 +196,7 @@ public class GatlingExecutionService {
                 cmd.add("cmd.exe");
                 cmd.add("/c");
             }
-            cmd.add(gradlew.toAbsolutePath().toString()); //---
-            // Le plugin Gatling Gradle crée une tâche individuelle par simulation :
-            // "gatlingRun-{FQCN}" — seule façon de n'exécuter QU'UNE simulation.
-            // "gatlingRun" sans suffixe lance TOUTES les simulations trouvées.
-           /* String simulationTask = "gatlingRun-" + req.getSimulationClass();
-            log.info(">>> Tâche Gradle : {}", simulationTask);
-
-            cmd.add("--no-daemon");
-            cmd.add(simulationTask);
-            cmd.add("-Dgatling.core.resultsFolder=" + reportOutputDir.toAbsolutePath()); *///----
+            cmd.add(gradlew.toAbsolutePath().toString());
             log.info(">>> Simulation sélectionnée : {}", req.getSimulationClass());
 
             // -PsimulationClass → propriété Gradle lue dans build.gradle via
@@ -234,6 +233,76 @@ public class GatlingExecutionService {
         }
 
         return cmd;
+    }
+
+    /**
+     * Crée un Gradle init script temporaire qui :
+     * 1. Filtre les simulations pour n'exécuter QUE la classe demandée
+     * 2. Configure le dossier de résultats
+     *
+     * Avantage : ne modifie JAMAIS le build.gradle de l'utilisateur.
+     * Le script est passé via --init-script et s'applique à la session Gradle uniquement.
+     */
+    private Path createGatlingInitScript(String simulationClass, Path reportOutputDir) throws Exception {
+        // Convertir FQCN en chemin de fichier : guce.coc.trn.Sim → guce/coc/trn/Sim
+        String filePath = simulationClass.replace('.', '/');
+
+        // Toujours utiliser des slashes forward — compatible Windows, Linux, Docker
+        // Gradle (Groovy) accepte les forward slashes sur tous les OS
+        String reportPath = reportOutputDir.toAbsolutePath()
+                .toString()
+                .replace('\\', '/')
+                .replace('\\', '/');
+
+                        String scriptContent = String.format("""
+                allprojects {
+                    afterEvaluate { proj ->
+                        if (proj.extensions.findByName('gatling') != null) {
+                            proj.gatling {
+                                simulations {
+                                    include '%s.java'
+                                    include '%s.scala'
+                                }
+                            }
+                            proj.tasks.withType(io.gatling.gradle.GatlingRunTask).configureEach { task ->
+                                task.systemProperty 'gatling.core.resultsFolder', '%s'
+                            }
+                        }
+                    }
+                }
+                """, filePath, filePath, reportPath);
+
+        // Files.createTempFile utilise automatiquement :
+        //   → C:\Users\...\AppData\Local\Temp  sur Windows
+        //   → /tmp                                   sur Linux / Docker
+        // Aucune configuration nécessaire — portable par nature
+        Path initScript = Files.createTempFile("perfhub-gatling-", ".gradle");
+        Files.writeString(initScript, scriptContent);
+        initScript.toFile().deleteOnExit();
+
+        log.info(">>> Init script Gatling : {} (sera supprimé à l'arrêt de la JVM)", initScript);
+        return initScript;
+    }
+
+    /**
+     * Copie récursivement un répertoire source vers destination.
+     * Utilisé pour déplacer le rapport Gatling de build/reports/gatling/
+     * vers storage/reports/run-{id}/
+     */
+    private void copyDirectory(Path source, Path destination) throws Exception {
+        Files.createDirectories(destination);
+        try (var stream = Files.walk(source)) {
+            for (Path src : (Iterable<Path>) stream::iterator) {
+                Path dest = destination.resolve(source.relativize(src));
+                if (Files.isDirectory(src)) {
+                    Files.createDirectories(dest);
+                } else {
+                    Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+        log.debug("Rapport copié : {} fichiers depuis {}",
+                Files.walk(destination).count(), source.getFileName());
     }
 
     private Optional<Path> findGatlingReport(Path projectPath, Path reportOutputDir) {
