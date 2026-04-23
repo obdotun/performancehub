@@ -43,6 +43,8 @@ public class GatlingExecutionService {
                 .simulationClass(req.getSimulationClass())
                 .status(RunStatus.PENDING)
                 .launchedBy(launchedBy)
+                .users(req.getUsers())
+                .rampDuration(req.getRampDuration())
                 .build();
 
         SimulationRun saved = runRepo.save(run);
@@ -208,8 +210,16 @@ public class GatlingExecutionService {
             cmd.add("--no-daemon");
             cmd.add("gatlingRun");
             cmd.add("-PsimulationClass=" + req.getSimulationClass());
-            cmd.add("-Dgatling.core.resultsFolder=" + reportOutputDir.toAbsolutePath()
-                    .toString().replace('\\', '/').replace('\\', '/'));
+
+            // Paramètres utilisateurs — accessibles dans la simulation via :
+            // int users        = Integer.getInteger("users", 1);
+            // int rampDuration = Integer.getInteger("rampDuration", 10);
+            if (req.getUsers() != null && req.getUsers() > 0) {
+                cmd.add("-Dusers=" + req.getUsers());
+            }
+            if (req.getRampDuration() != null && req.getRampDuration() > 0) {
+                cmd.add("-DrampDuration=" + req.getRampDuration());
+            }
 
         } else if (Files.exists(pom)) {
             cmd.add(isWindows ? "mvn.cmd" : "mvn");
@@ -255,22 +265,22 @@ public class GatlingExecutionService {
                 .replace('\\', '/');
 
                         String scriptContent = String.format("""
-                allprojects {
-                    afterEvaluate { proj ->
-                        if (proj.extensions.findByName('gatling') != null) {
-                            proj.gatling {
-                                simulations {
-                                    include '%s.java'
-                                    include '%s.scala'
-                                }
+            allprojects {
+                afterEvaluate { proj ->
+                    if (proj.extensions.findByName('gatling') != null) {
+                        proj.gatling {
+                            simulations {
+                                include '%s.java'
+                                include '%s.scala'
                             }
-                            proj.tasks.withType(io.gatling.gradle.GatlingRunTask).configureEach { task ->
-                                task.systemProperty 'gatling.core.resultsFolder', '%s'
-                            }
+                        }
+                        proj.tasks.withType(io.gatling.gradle.GatlingRunTask).configureEach { task ->
+                            task.systemProperty 'gatling.core.resultsFolder', '%s'
                         }
                     }
                 }
-                """, filePath, filePath, reportPath);
+            }
+        """, filePath, filePath, reportPath);
 
         // Files.createTempFile utilise automatiquement :
         //   → C:\Users\...\AppData\Local\Temp  sur Windows

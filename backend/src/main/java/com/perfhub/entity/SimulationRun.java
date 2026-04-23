@@ -41,6 +41,12 @@ public class SimulationRun {
     private Long meanResponseTime;
     private String launchedBy;
 
+    /** Nombre d'utilisateurs configurés pour ce run */
+    private Integer users;
+
+    /** Durée de montée en charge en secondes */
+    private Integer rampDuration;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime startedAt;
 

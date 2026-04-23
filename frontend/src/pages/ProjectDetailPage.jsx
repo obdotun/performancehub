@@ -23,8 +23,10 @@ export default function ProjectDetailPage() {
   const [project, setProject]         = useState(null)
   const [simulations, setSimulations] = useState([])
   const [runs, setRuns]               = useState([])
-  const [selectedSim, setSelectedSim] = useState('')
-  const [extraParams, setExtraParams] = useState('')
+  const [selectedSim, setSelectedSim]   = useState('')
+  const [users, setUsers]               = useState(1)
+  const [rampDuration, setRampDuration] = useState(10)
+  const [extraParams, setExtraParams]   = useState('')
   const [loading, setLoading]         = useState(true)
   const [launching, setLaunching]     = useState(false)
   const [error, setError]             = useState('')
@@ -49,7 +51,15 @@ export default function ProjectDetailPage() {
     if (!selectedSim) { setError('Sélectionnez une simulation'); return }
     setError(''); setLaunching(true)
     try {
-      const run = await launchRun(id, { simulationClass: selectedSim, extraParams })
+      // N'envoyer users/rampDuration que si valides (> 0)
+      const payload = { simulationClass: selectedSim }
+      const parsedUsers = parseInt(users)
+      const parsedRamp  = parseInt(rampDuration)
+      if (!isNaN(parsedUsers) && parsedUsers > 0)  payload.users = parsedUsers
+      if (!isNaN(parsedRamp)  && parsedRamp  >= 0) payload.rampDuration = parsedRamp
+      if (extraParams?.trim()) payload.extraParams = extraParams.trim()
+
+      const run = await launchRun(id, payload)
       navigate(`/runs/${run.id}`)
     } catch (e) {
       setError(e.message ?? 'Erreur lors du lancement')
@@ -119,11 +129,30 @@ export default function ProjectDetailPage() {
                         </MenuItem>
                       ))}
                     </TextField>
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <TextField
+                        label="Utilisateurs" type="number"
+                        inputProps={{ min: 1 }}
+                        value={users}
+                        onChange={e => setUsers(e.target.value)}
+                        helperText="Nb d'utilisateurs virtuels"
+                        sx={{ flex: 1 }}
+                      />
+                      <TextField
+                        label="Ramp (secondes)" type="number"
+                        inputProps={{ min: 0 }}
+                        value={rampDuration}
+                        onChange={e => setRampDuration(e.target.value)}
+                        helperText="Durée de montée en charge"
+                        sx={{ flex: 1 }}
+                      />
+                    </Box>
                     <TextField label="Paramètres supplémentaires (optionnel)"
-                      placeholder="-DusersCount=100 -DrampDuration=60"
+                      placeholder="-DmaxDuration=300"
                       fullWidth multiline rows={2}
-                      value={extraParams} onChange={e => setExtraParams(e.target.value)}
-                      helperText="Paramètres Java/Gatling supplémentaires" />
+                      value={extraParams}
+                      onChange={e => setExtraParams(e.target.value)}
+                      helperText="Paramètres JVM supplémentaires" />
                     {error && <Alert severity="error">{error}</Alert>}
                     <Button variant="contained" size="large" startIcon={<PlayArrowIcon />}
                       onClick={handleLaunch} disabled={launching} sx={{ py: 1.5 }}>
@@ -162,6 +191,7 @@ export default function ProjectDetailPage() {
                       <Typography variant="caption" color="text.secondary">
                         {dayjs(run.startedAt).format('DD/MM/YYYY HH:mm')}
                         {run.launchedBy && ` · ${run.launchedBy}`}
+                        {run.users && ` · ${run.users} users`}
                         {run.durationSeconds && ` · ${run.durationSeconds}s`}
                       </Typography>
                     </Box>

@@ -175,9 +175,9 @@ export default function RunDetailPage() {
         {tab === 1 && reportUrl && (
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1, borderBottom: '1px solid rgba(48,54,61,0.4)' }}>
-              <Button size="small" startIcon={<OpenInNewIcon />} onClick={() => window.open(reportUrl, '_blank')}>
+             {/*  <Button size="small" startIcon={<OpenInNewIcon />} onClick={() => window.open(reportUrl, '_blank')}>
                 Ouvrir dans un onglet
-              </Button>
+              </Button>*/}
             </Box>
             <iframe src={reportUrl} title="Gatling Report"
               style={{ width: '100%', height: '700px', border: 'none', borderRadius: '0 0 10px 10px', background: '#fff' }} />
