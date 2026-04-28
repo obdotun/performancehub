@@ -1,0 +1,88 @@
+version: '3.9'
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: perfhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-perfhub}
+      POSTGRES_USER:     ${POSTGRES_USER:-perfhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-perfhub_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-perfhub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - perfhub-network
+
+  # ── Backend Spring Boot ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: perfhub-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      POSTGRES_HOST:          postgres
+      POSTGRES_PORT:          5432
+      POSTGRES_DB:            ${POSTGRES_DB:-perfhub}
+      POSTGRES_USER:          ${POSTGRES_USER:-perfhub}
+      POSTGRES_PASSWORD:      ${POSTGRES_PASSWORD:-perfhub_secret}
+      JWT_SECRET:             ${JWT_SECRET:-change-this-secret-in-production-min-32-chars}
+      STORAGE_ROOT:           /app/storage
+      GIT_SSL_VERIFY:         ${GIT_SSL_VERIFY:-false}
+      GIT_TIMEOUT:            ${GIT_TIMEOUT:-120}
+    volumes:
+      # Stockage persistant : projets Gatling + rapports
+      - perfhub_storage:/app/storage
+      # Cache Gradle persistant — évite de re-télécharger les dépendances
+      # à chaque redémarrage du container
+      - gradle_cache:/app/.gradle
+    expose:
+      - "8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - perfhub-network
+
+  # ── Frontend React + Nginx ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: perfhub-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - perfhub-network
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  perfhub_storage:
+    driver: local
+  gradle_cache:
+    driver: local
+
+# ── Network ──────────────────────────────────────────────────────────────────
+networks:
+  perfhub-network:
+    driver: bridge

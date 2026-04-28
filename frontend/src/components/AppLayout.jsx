@@ -11,6 +11,7 @@ import PeopleIcon from '@mui/icons-material/People'
 import LogoutIcon from '@mui/icons-material/Logout'
 import SpeedIcon from '@mui/icons-material/Speed'
 import { useAuth } from '../context/AuthContext'
+import NetworkErrorBanner from './NetworkErrorBanner'
 
 const DRAWER_WIDTH = 240
 
@@ -131,6 +132,7 @@ export default function AppLayout() {
             </Typography>
           </Toolbar>
         </AppBar>
+        <NetworkErrorBanner />
         <Box sx={{ p: 3 }}>
           <Outlet />
         </Box>

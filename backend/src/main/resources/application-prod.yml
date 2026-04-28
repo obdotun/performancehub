@@ -1,0 +1,46 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres}:${POSTGRES_PORT:5432}/${POSTGRES_DB:perfhub}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:perfhub}
+    password: ${POSTGRES_PASSWORD:perfhub_secret}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+
+  h2:
+    console:
+      enabled: false
+
+perfhub:
+  storage:
+    root:     ${STORAGE_ROOT:/app/storage}
+    projects: ${STORAGE_ROOT:/app/storage}/projects
+    reports:  ${STORAGE_ROOT:/app/storage}/reports
+
+  jwt:
+    secret: ${JWT_SECRET:change-this-secret-in-production-min-32-chars}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+  git:
+    ssl-verify: ${GIT_SSL_VERIFY:false}
+    timeout-seconds: ${GIT_TIMEOUT:120}
+
+logging:
+  level:
+    com.perfhub: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN

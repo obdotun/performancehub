@@ -17,7 +17,7 @@ function getToken() {
 
 /**
  * skipAuthRedirect : ne pas rediriger vers /login sur 401/403
- * skipToken        : ne pas envoyer le header Authorization (ex: endpoint login)
+ * skipToken        : ne pas envoyer le header Authorization (login)
  */
 export async function apiFetch(path, options = {}) {
   const { skipAuthRedirect = false, skipToken = false, ...fetchOptions } = options
@@ -38,14 +38,24 @@ export async function apiFetch(path, options = {}) {
   let res
   try {
     res = await fetch(BASE + path, { ...fetchOptions, headers })
-  } catch {
+  } catch (networkErr) {
+    // Erreur réseau : serveur éteint, Docker redémarré, timeout Nginx
+    console.error(`[PerfHub] Erreur réseau sur ${method} ${BASE}${path}`, networkErr)
     throw Object.assign(
-      new Error('Serveur inaccessible. Vérifiez que le backend est démarré sur le port 8085.'),
+      new Error('Connexion perdue. Le serveur est inaccessible — vérifiez que le backend est démarré.'),
       { status: 0, network: true }
     )
   }
 
   console.debug(`[PerfHub] ← ${res.status} ${method} ${BASE}${path}`)
+
+  // 502 Bad Gateway = Nginx up mais backend down ou timeout
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    throw Object.assign(
+      new Error('Le serveur backend est temporairement indisponible (502/503/504). Réessayez dans quelques secondes.'),
+      { status: res.status, gateway: true }
+    )
+  }
 
   if (res.status === 401 && !skipAuthRedirect) {
     localStorage.removeItem('perfhub_auth')
@@ -68,7 +78,7 @@ export async function apiFetch(path, options = {}) {
     })
   }
 
-  // Réponses sans body (204, ou 200 avec body vide)
+  // Réponses sans body (204 ou 200 avec body vide)
   if (res.status === 204) return null
   const contentType = res.headers.get('content-type') || ''
   if (!contentType.includes('application/json')) return null

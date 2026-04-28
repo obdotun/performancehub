@@ -2,17 +2,19 @@ import { useEffect, useRef, useCallback } from 'react'
 import { Client } from '@stomp/stompjs'
 
 /**
- * WebSocket NATIF — sans SockJS.
+ * URL WebSocket dynamique :
+ * - En dev (Vite sur :3000) → ws://localhost:8085/ws-native
+ * - En prod (Nginx sur :80) → ws://monserveur.com/ws-native
  *
- * Pourquoi sans SockJS :
- * - SockJS résout ses URLs de polling en relatif par rapport à window.location
- * - Quand Vite tourne sur :3000 et le backend sur :8085, SockJS génère des
- *   requêtes parasites comme /api/projects/s1 (session SockJS) qui polluent
- *   les appels API et causent des 403/404.
- * - @stomp/stompjs v7 supporte nativement WebSocket sans SockJS via brokerURL.
- * - Le backend expose /ws-native (WebSocket pur) en plus de /ws (SockJS).
+ * window.location.host retourne l'hôte courant (sans le port en prod sur :80)
  */
-const WS_URL = 'ws://localhost:8085/ws-native'
+function getWsUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host     = import.meta.env.DEV
+    ? 'localhost:8085'       // dev : backend sur port différent
+    : window.location.host  // prod : même hôte que le frontend (Nginx proxy)
+  return `${protocol}//${host}/ws-native`
+}
 
 export function useRunWebSocket(runId, onLog, onDone) {
   const clientRef = useRef(null)
@@ -28,40 +30,26 @@ export function useRunWebSocket(runId, onLog, onDone) {
     if (!runId) return
     disconnect()
 
-    const client = new Client({
-      brokerURL: WS_URL,
-      reconnectDelay: 3000,
+    const wsUrl = getWsUrl()
+    console.debug(`[PerfHub] WebSocket → ${wsUrl}`)
 
+    const client = new Client({
+      brokerURL: wsUrl,
+      reconnectDelay: 3000,
       onConnect: () => {
         console.log(`[PerfHub] ✅ WebSocket connecté — run #${runId}`)
-
-        client.subscribe(`/topic/runs/${runId}/logs`, (msg) => {
-          onLog?.(msg.body)
-        })
-
-        client.subscribe(`/topic/runs/${runId}/done`, (msg) => {
-          console.log(`[PerfHub] Run #${runId} terminé`)
+        client.subscribe(`/topic/runs/${runId}/logs`, msg => onLog?.(msg.body))
+        client.subscribe(`/topic/runs/${runId}/done`, msg => {
           try { onDone?.(JSON.parse(msg.body)) } catch { onDone?.({}) }
           disconnect()
         })
       },
-
-      onStompError: (frame) => {
-        console.error('[PerfHub] STOMP error', frame)
-      },
-
-      onDisconnect: () => {
-        console.debug('[PerfHub] WebSocket déconnecté')
-      },
-
-      onWebSocketError: (error) => {
-        console.error('[PerfHub] WebSocket error', error)
-      },
+      onStompError:    frame => console.error('[PerfHub] STOMP error', frame),
+      onWebSocketError: err  => console.error('[PerfHub] WS error', err),
     })
 
     client.activate()
     clientRef.current = client
-
     return disconnect
   }, [runId])
 

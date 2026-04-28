@@ -64,6 +64,9 @@ public class GatlingProjectService {
 
         log.info("Racine effective du projet : {}", projectDir);
 
+        // Rendre gradlew exécutable (nécessaire sur Linux/Docker)
+        makeGradlewExecutable(projectDir);
+
         // Injecter le build.gradle PerfHub-compatible
         injectBuildGradle(projectDir);
 
@@ -103,6 +106,9 @@ public class GatlingProjectService {
         File targetDir = Path.of(projectsRoot, sanitize(req.getName())).toFile();
         gitService.cloneOrPull(req.getRepoUrl(), req.getBranch(), req.getUsername(), req.getToken(), targetDir);
 
+        // Rendre gradlew exécutable (nécessaire sur Linux/Docker)
+        makeGradlewExecutable(targetDir.toPath());
+
         // Injecter le build.gradle PerfHub-compatible
         injectBuildGradle(targetDir.toPath());
 
@@ -127,6 +133,9 @@ public class GatlingProjectService {
         }
         gitService.cloneOrPull(project.getRepoUrl(), project.getBranch(), username, token,
                 new File(project.getLocalPath()));
+
+        // Rendre gradlew exécutable après chaque pull
+        makeGradlewExecutable(Path.of(project.getLocalPath()));
 
         // Re-injecter le build.gradle après chaque pull
         injectBuildGradle(Path.of(project.getLocalPath()));
@@ -289,31 +298,31 @@ public class GatlingProjectService {
             }
 
             String buildGradleContent = """
-plugins {
-    id 'java'
-    id 'io.gatling.gradle' version '3.9.0.2'
-}
-
-gatling {
-    simulations {
-        // PerfHub injecte la simulation via : -PsimulationClass=com.example.MySimulation
-        // La closure convertit le FQCN en chemin de fichier pour le filtre Gatling
-        def sim = project.findProperty("simulationClass")
-        if (sim) {
-            include sim.replace('.', '/') + '.java'
-            include sim.replace('.', '/') + '.scala'
-        }
-    }
-    logLevel = 'WARN'
-    logHttp = 'FAILURES'
-    enterprise {
-    }
-}
-
-repositories {
-    mavenCentral()
-}
-""";
+            plugins {
+                id 'java'
+                id 'io.gatling.gradle' version '3.9.0.2'
+            }
+            
+            gatling {
+                simulations {
+                    // PerfHub injecte la simulation via : -PsimulationClass=com.example.MySimulation
+                    // La closure convertit le FQCN en chemin de fichier pour le filtre Gatling
+                    def sim = project.findProperty("simulationClass")
+                    if (sim) {
+                        include sim.replace('.', '/') + '.java'
+                        include sim.replace('.', '/') + '.scala'
+                    }
+                }
+                logLevel = 'WARN'
+                logHttp = 'FAILURES'
+                enterprise {
+                }
+            }
+            
+            repositories {
+                mavenCentral()
+            }
+            """;
 
             Files.writeString(buildGradle, buildGradleContent);
             log.info("build.gradle PerfHub injecté dans : {}", projectDir);
@@ -321,6 +330,36 @@ repositories {
         } catch (IOException e) {
             log.warn("Impossible d'injecter build.gradle dans {} : {}", projectDir, e.getMessage());
         }
+    }
+
+    /**
+     * Prépare gradlew pour Linux/Docker :
+     * 1. Convertit les fins de ligne CRLF → LF
+     *    (gradlew zippé depuis Windows contient \r\n → "/usr/bin/env: 'sh\r': No such file or directory")
+     * 2. Rend le fichier exécutable (+x)
+     */
+    private void makeGradlewExecutable(Path projectDir) {
+        Path gradlew = projectDir.resolve("gradlew");
+        if (!Files.exists(gradlew)) {
+            log.warn("gradlew introuvable dans : {}", projectDir);
+            return;
+        }
+
+        try {
+            // Lire le contenu et supprimer les \r (CRLF → LF)
+            String content = Files.readString(gradlew);
+            if (content.contains("\r")) {
+                String fixed = content.replace("\r\n", "\n").replace("\r", "\n");
+                Files.writeString(gradlew, fixed);
+                log.info("gradlew : fins de ligne CRLF → LF converties");
+            }
+        } catch (IOException e) {
+            log.warn("Impossible de convertir les fins de ligne de gradlew : {}", e.getMessage());
+        }
+
+        // Rendre exécutable
+        boolean ok = gradlew.toFile().setExecutable(true, false);
+        log.info("gradlew executable={} : {}", ok, gradlew);
     }
 
     private String sanitize(String name) {
