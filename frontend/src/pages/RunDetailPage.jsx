@@ -111,10 +111,10 @@ export default function RunDetailPage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
             <Typography variant="h5" fontWeight={700}>Run #{run.id}</Typography>
             <StatusChip status={run.status} size="medium" />
-            {wsActive && (
+          {/*  {wsActive && (
               <Chip label="● Live" color="error" size="small"
                 sx={{ animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } } }} />
-            )}
+            )}*/}
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontFamily: 'monospace' }}>
             {run.simulationClass}
