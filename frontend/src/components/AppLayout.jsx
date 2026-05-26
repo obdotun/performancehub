@@ -10,6 +10,7 @@ import HistoryIcon from '@mui/icons-material/History'
 import PeopleIcon from '@mui/icons-material/People'
 import LogoutIcon from '@mui/icons-material/Logout'
 import SpeedIcon from '@mui/icons-material/Speed'
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'   // ← Nouveau
 import { useAuth } from '../context/AuthContext'
 import NetworkErrorBanner from './NetworkErrorBanner'
 
@@ -28,10 +29,11 @@ export default function AppLayout() {
   const { auth, logout, hasRole } = useAuth()
 
   const navItems = [
-    { label: 'Dashboard',  icon: <DashboardIcon />, path: '/',         minRole: 'VIEWER' },
-    { label: 'Projets',    icon: <FolderIcon />,    path: '/projects', minRole: 'VIEWER' },
-    { label: 'Historique', icon: <HistoryIcon />,   path: '/runs',     minRole: 'VIEWER' },
-    { label: 'Utilisateurs',icon: <PeopleIcon />,   path: '/users',    minRole: 'ADMIN'  },
+    { label: 'Dashboard',   icon: <DashboardIcon />,     path: '/',           minRole: 'VIEWER' },
+    { label: 'Projets',     icon: <FolderIcon />,         path: '/projects',   minRole: 'VIEWER' },
+    { label: 'Historique',  icon: <HistoryIcon />,        path: '/runs',       minRole: 'VIEWER' },
+    { label: 'Campagnes',   icon: <FolderSpecialIcon />,  path: '/campaigns',  minRole: 'VIEWER' }, // ← Nouveau
+    { label: 'Utilisateurs',icon: <PeopleIcon />,         path: '/users',      minRole: 'ADMIN'  },
   ].filter(item => hasRole(item.minRole))
 
   const isActive = (path) =>

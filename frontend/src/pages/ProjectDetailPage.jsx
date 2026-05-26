@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Box, Typography, Button, Grid, Card, CardContent,
+  Autocomplete, Box, Typography, Button, Grid, Card, CardContent,
   TextField, MenuItem, LinearProgress, Alert, Chip,
   Divider, IconButton, Tooltip,
 } from '@mui/material'
@@ -193,16 +193,24 @@ export default function ProjectDetailPage() {
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 
                     {/* Module */}
-                    <TextField label="Module" select fullWidth
-                      value={selectedModule}
-                      onChange={e => {
-                        setSelectedModule(e.target.value)
+                    <Autocomplete
+                      options={modules}
+                      value={selectedModule || null}
+                      onChange={(event, newValue) => {
+                        setSelectedModule(newValue || '')
                         setSelectedSim('')
-                      }}>
-                      {modules.map(m => (
-                        <MenuItem key={m} value={m}>{m.toUpperCase()}</MenuItem>
-                      ))}
-                    </TextField>
+                      }}
+                      autoHighlight
+                      clearOnEscape
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Module"
+                          placeholder="Rechercher un module..."
+                          fullWidth
+                        />
+                      )}
+                    />
 
                     {/* Environment */}
                     <TextField label="Environnement" select fullWidth
@@ -217,15 +225,28 @@ export default function ProjectDetailPage() {
                     </TextField>
 
                     {/* Simulation */}
-                    <TextField label="Simulation" select fullWidth required
-                      value={selectedSim}
-                      onChange={e => setSelectedSim(e.target.value)}>
-                      {filteredSimulations.map(s => (
-                        <MenuItem key={s.full} value={s.full}>
-                          {s.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                    <Autocomplete
+                      options={filteredSimulations}
+                      getOptionLabel={(option) => option.name}
+                      value={
+                        filteredSimulations.find(s => s.full === selectedSim) || null
+                      }
+                      onChange={(event, newValue) => {
+                        setSelectedSim(newValue ? newValue.full : '')
+                      }}
+                      autoHighlight
+                      clearOnEscape
+                      noOptionsText="Aucune simulation trouvée"
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Simulation"
+                          placeholder="Rechercher une simulation..."
+                          fullWidth
+                          required
+                        />
+                      )}
+                    />
 
                     <Box sx={{ display: 'flex', gap: 2 }}>
                       <TextField label="Utilisateurs" type="number"

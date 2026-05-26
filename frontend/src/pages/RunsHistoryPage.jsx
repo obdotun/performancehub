@@ -4,12 +4,17 @@ import {
   Box, Typography, Card, CardContent, LinearProgress,
   TextField, MenuItem, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, IconButton,
-  Tooltip, InputAdornment,
+  Tooltip, InputAdornment, Button, Stack,
 } from '@mui/material'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import SearchIcon from '@mui/icons-material/Search'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import AssessmentIcon from '@mui/icons-material/Assessment'
+import CloseIcon from '@mui/icons-material/Close'
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
 import { getRuns } from '../api/runs'
 import StatusChip from '../components/StatusChip'
 import dayjs from 'dayjs'
@@ -18,10 +23,13 @@ const STATUS_OPTIONS = ['TOUS', 'SUCCESS', 'FAILED', 'RUNNING', 'PENDING', 'CANC
 
 export default function RunsHistoryPage() {
   const navigate = useNavigate()
-  const [runs, setRuns]               = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [search, setSearch]           = useState('')
+
+  const [runs, setRuns]                 = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [search, setSearch]             = useState('')
   const [statusFilter, setStatusFilter] = useState('TOUS')
+  const [dateFrom, setDateFrom]         = useState(null)
+  const [dateTo, setDateTo]             = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -38,7 +46,10 @@ export default function RunsHistoryPage() {
       r.simulationClass?.toLowerCase().includes(search.toLowerCase()) ||
       r.project?.name?.toLowerCase().includes(search.toLowerCase()) ||
       r.launchedBy?.toLowerCase().includes(search.toLowerCase())
-    return matchStatus && matchSearch
+    const runDate = dayjs(r.startedAt)
+    const matchFrom = !dateFrom || runDate.isAfter(dateFrom.subtract(1, 'day'))
+    const matchTo   = !dateTo   || runDate.isBefore(dateTo.add(1, 'day'))
+    return matchStatus && matchSearch && matchFrom && matchTo
   })
 
   const stats = {
@@ -48,8 +59,11 @@ export default function RunsHistoryPage() {
     running: runs.filter(r => r.status === 'RUNNING').length,
   }
 
+  const clearDateFilters = () => { setDateFrom(null); setDateTo(null) }
+
   return (
     <Box>
+      {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
           <Typography variant="h5" fontWeight={700}>Historique des simulations</Typography>
@@ -58,25 +72,72 @@ export default function RunsHistoryPage() {
             {stats.running > 0 && ` · ${stats.running} en cours`}
           </Typography>
         </Box>
-        <Tooltip title="Rafraîchir"><IconButton onClick={load}><RefreshIcon /></IconButton></Tooltip>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FolderSpecialIcon />}
+            size="small"
+            onClick={() => navigate('/campaigns')}
+          >
+            Créer une campagne
+          </Button>
+          <Tooltip title="Rafraîchir">
+            <IconButton onClick={load}><RefreshIcon /></IconButton>
+          </Tooltip>
+        </Stack>
       </Box>
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
+      {/* Filters */}
       <Card sx={{ mb: 2 }}>
         <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField size="small" placeholder="Rechercher simulation, projet, utilisateur..."
-              value={search} onChange={e => setSearch(e.target.value)} sx={{ minWidth: 320 }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
-            <TextField select size="small" label="Statut" value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)} sx={{ minWidth: 150 }}>
+            <TextField
+              size="small"
+              placeholder="Rechercher simulation, projet, utilisateur..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              sx={{ minWidth: 300 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              select size="small" label="Statut"
+              value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              sx={{ minWidth: 140 }}
+            >
               {STATUS_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
             </TextField>
+
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DatePicker
+                label="Du" value={dateFrom} onChange={setDateFrom}
+                maxDate={dateTo ?? undefined}
+                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
+              />
+              <DatePicker
+                label="Au" value={dateTo} onChange={setDateTo}
+                minDate={dateFrom ?? undefined}
+                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
+              />
+            </LocalizationProvider>
+
+            {(dateFrom || dateTo) && (
+              <Tooltip title="Effacer les filtres de date">
+                <IconButton size="small" onClick={clearDateFilters}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         </CardContent>
       </Card>
 
+      {/* Table */}
       <Card>
         <TableContainer>
           <Table size="small">
@@ -107,7 +168,9 @@ export default function RunsHistoryPage() {
                 <TableRow key={run.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/runs/${run.id}`)}>
                   <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>#{run.id}</TableCell>
                   <TableCell>
-                    <Typography variant="body2" fontWeight={500} noWrap sx={{ maxWidth: 140 }}>{run.project?.name ?? '—'}</Typography>
+                    <Typography variant="body2" fontWeight={500} noWrap sx={{ maxWidth: 140 }}>
+                      {run.project?.name ?? '—'}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block', maxWidth: 220 }} noWrap>
@@ -119,34 +182,49 @@ export default function RunsHistoryPage() {
                   </TableCell>
                   <TableCell align="right">
                     {run.failedRequests != null
-                      ? <Typography variant="body2" color={run.failedRequests > 0 ? 'error.main' : 'success.main'}>{run.failedRequests.toLocaleString()}</Typography>
+                      ? <Typography variant="body2" color={run.failedRequests > 0 ? 'error.main' : 'success.main'}>
+                          {run.failedRequests.toLocaleString()}
+                        </Typography>
                       : '—'}
                   </TableCell>
                   <TableCell align="right">
                     {run.meanResponseTime != null
-                      ? <Chip label={`${run.meanResponseTime} ms`} size="small"
-                          color={run.meanResponseTime < 500 ? 'success' : run.meanResponseTime < 2000 ? 'warning' : 'error'} variant="outlined" />
+                      ? <Chip
+                          label={`${run.meanResponseTime} ms`} size="small"
+                          color={run.meanResponseTime < 500 ? 'success' : run.meanResponseTime < 2000 ? 'warning' : 'error'}
+                          variant="outlined"
+                        />
                       : '—'}
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="caption" color="text.secondary">
-                      {run.durationSeconds != null ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s` : '—'}
+                      {run.durationSeconds != null
+                        ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s`
+                        : '—'}
                     </Typography>
                   </TableCell>
-                  <TableCell><Typography variant="caption" color="text.secondary">{run.launchedBy ?? '—'}</Typography></TableCell>
-                  <TableCell><Typography variant="caption" color="text.secondary">{dayjs(run.startedAt).format('DD/MM/YY HH:mm')}</Typography></TableCell>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">{run.launchedBy ?? '—'}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">
+                      {dayjs(run.startedAt).format('DD/MM/YY HH:mm')}
+                    </Typography>
+                  </TableCell>
                   <TableCell><StatusChip status={run.status} /></TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                       {run.reportPath && (
                         <Tooltip title="Rapport Gatling">
-                          <IconButton size="small" color="primary" onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
+                          <IconButton size="small" color="primary"
+                            onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
                             <AssessmentIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       )}
                       <Tooltip title="Voir les logs">
-                        <IconButton size="small" onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
+                        <IconButton size="small"
+                          onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
                           <OpenInNewIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

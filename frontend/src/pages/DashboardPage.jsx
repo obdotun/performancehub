@@ -1,35 +1,41 @@
 import React, { useEffect, useState } from 'react'
-import { Grid, Typography, Box, Card, CardContent, LinearProgress, Button } from '@mui/material'
+import { Grid, Typography, Box, Card, CardContent, LinearProgress, Button, Chip } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import SpeedIcon from '@mui/icons-material/Speed'
 import FolderIcon from '@mui/icons-material/Folder'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import { getProjects } from '../api/projects'
 import { getRuns } from '../api/runs'
+import { getCampaigns } from '../api/campaigns'           // ← Nouveau
 import MetricCard from '../components/MetricCard'
 import StatusChip from '../components/StatusChip'
 import dayjs from 'dayjs'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const [projects, setProjects] = useState([])
-  const [runs, setRuns]         = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [projects,  setProjects]  = useState([])
+  const [runs,      setRuns]      = useState([])
+  const [campaigns, setCampaigns] = useState([])         // ← Nouveau
+  const [loading,   setLoading]   = useState(true)
 
   useEffect(() => {
-    Promise.all([getProjects(), getRuns()])
-      .then(([p, r]) => {
+    Promise.all([getProjects(), getRuns(), getCampaigns()])
+      .then(([p, r, c]) => {
         setProjects(Array.isArray(p) ? p : [])
         setRuns(Array.isArray(r) ? r : [])
+        setCampaigns(Array.isArray(c) ? c : [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
 
-  const recentRuns   = runs.slice(0, 8)
-  const successCount = runs.filter(r => r.status === 'SUCCESS').length
-  const successRate  = runs.length ? Math.round((successCount / runs.length) * 100) : null
+  const recentRuns      = runs.slice(0, 8)
+  const recentCampaigns = campaigns.slice(0, 4)          // ← Nouveau
+  const successCount    = runs.filter(r => r.status === 'SUCCESS').length
+  const successRate     = runs.length ? Math.round((successCount / runs.length) * 100) : null
 
   return (
     <Box>
@@ -39,20 +45,21 @@ export default function DashboardPage() {
 
       <Grid container spacing={2} mb={3}>
         <Grid item xs={12} sm={6} md={3}>
-          <MetricCard label="Projets Gatling" value={projects.length} color="primary.main" icon={<FolderIcon />} />
+          <MetricCard label="Projets Gatling"    value={projects.length}  color="primary.main"  icon={<FolderIcon />} />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <MetricCard label="Simulations lancées" value={runs.length} color="text.primary" icon={<SpeedIcon />} />
+          <MetricCard label="Simulations lancées" value={runs.length}     color="text.primary"  icon={<SpeedIcon />} />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <MetricCard label="Succès" value={successCount} color="success.main" icon={<CheckCircleIcon />} />
+          <MetricCard label="Succès"             value={successCount}     color="success.main"  icon={<CheckCircleIcon />} />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <MetricCard label="Taux de succès" value={successRate} unit="%" color="primary.light" icon={<CheckCircleIcon />} />
+          <MetricCard label="Taux de succès"     value={successRate}      unit="%" color="primary.light" icon={<CheckCircleIcon />} />
         </Grid>
       </Grid>
 
-      <Card>
+      {/* Dernières simulations */}
+      <Card sx={{ mb: 3 }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
             <Typography variant="h6">Dernières simulations</Typography>
@@ -87,6 +94,58 @@ export default function DashboardPage() {
                   <StatusChip status={run.status} />
                   <Typography variant="caption" color="text.secondary" sx={{ minWidth: 110 }}>
                     {dayjs(run.startedAt).format('DD/MM/YY HH:mm')}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </CardContent>
+      </Card>
+
+      {/* ── Dernières campagnes ── */}
+      <Card>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h6">Dernières campagnes</Typography>
+            <Button size="small" onClick={() => navigate('/campaigns')}>Voir tout</Button>
+          </Box>
+
+          {recentCampaigns.length === 0 && !loading && (
+            <Typography color="text.secondary" variant="body2" textAlign="center" py={3}>
+              Aucune campagne créée.{' '}
+              <Button size="small" onClick={() => navigate('/campaigns')}>Créer une campagne</Button>
+            </Typography>
+          )}
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {recentCampaigns.map(c => (
+              <Box key={c.id} onClick={() => navigate(`/campaigns/${c.id}`)}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 2, p: 1.5, borderRadius: 2,
+                  cursor: 'pointer', border: '1px solid rgba(48,54,61,0.5)',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.03)', borderColor: 'primary.main' },
+                  transition: 'all 0.2s',
+                }}>
+                <FolderSpecialIcon fontSize="small" color="primary" />
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={500} noWrap>{c.name}</Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {c.totalRuns} run(s) · {c.successRuns} succès · {c.failedRuns} échec(s)
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+                  <Chip
+                    icon={c.status === 'IN_PROGRESS'
+                      ? <HourglassEmptyIcon fontSize="small" />
+                      : <CheckCircleIcon fontSize="small" />}
+                    label={c.status === 'IN_PROGRESS' ? 'En cours' : 'Terminée'}
+                    size="small"
+                    color={c.status === 'IN_PROGRESS' ? 'warning' : 'success'}
+                    variant="outlined"
+                    sx={{ fontWeight: 600 }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 110 }}>
+                    {dayjs(c.createdAt).format('DD/MM/YY HH:mm')}
                   </Typography>
                 </Box>
               </Box>

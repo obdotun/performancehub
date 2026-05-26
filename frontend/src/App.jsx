@@ -12,10 +12,11 @@ import ProjectDetailPage from './pages/ProjectDetailPage'
 import RunDetailPage from './pages/RunDetailPage'
 import RunsHistoryPage from './pages/RunsHistoryPage'
 import UsersPage from './pages/UsersPage'
+import CampaignsPage from './pages/CampaignsPage'           // ← Nouveau
+import CampaignDetailPage from './pages/CampaignDetailPage' // ← Nouveau
 
 function ProtectedRoute({ children, minRole }) {
   const { auth, hasRole } = useAuth()
-
   if (!auth) return <Navigate to="/login" replace />
   if (auth.mustChangePassword) return <Navigate to="/change-password" replace />
   if (minRole && !hasRole(minRole)) return <Navigate to="/" replace />
@@ -39,6 +40,8 @@ export default function App() {
               <Route path="projects/:id" element={<ProjectDetailPage />} />
               <Route path="runs" element={<RunsHistoryPage />} />
               <Route path="runs/:id" element={<RunDetailPage />} />
+              <Route path="campaigns" element={<CampaignsPage />} />           {/* ← Nouveau */}
+              <Route path="campaigns/:id" element={<CampaignDetailPage />} />  {/* ← Nouveau */}
               <Route path="users" element={
                 <ProtectedRoute minRole="ADMIN"><UsersPage /></ProtectedRoute>
               } />
