@@ -1,5 +1,6 @@
 package com.perfhub.controller;
 
+import com.perfhub.dto.PagedRunsResponse;
 import com.perfhub.dto.RunRequest;
 import com.perfhub.entity.RunLog;
 import com.perfhub.entity.SimulationRun;
@@ -19,9 +20,28 @@ public class SimulationRunController {
 
     private final GatlingExecutionService executionService;
 
+    // ── Liste sans pagination (conservée pour Dashboard + Campagnes) ──────────
     @GetMapping
     public ResponseEntity<List<SimulationRun>> findAll() {
         return ResponseEntity.ok(executionService.findAll());
+    }
+
+    // ── Liste paginée avec filtres — utilisée par RunsHistoryPage ────────────
+    /**
+     * GET /api/runs/paged?page=0&size=10&status=SUCCESS&search=HomePage
+     *
+     * @param page   page courante (0-based, défaut 0)
+     * @param size   éléments par page (défaut 10)
+     * @param status filtre statut optionnel
+     * @param search filtre texte libre optionnel
+     */
+    @GetMapping("/paged")
+    public ResponseEntity<PagedRunsResponse> findAllPaged(
+            @RequestParam(defaultValue = "0")  int    page,
+            @RequestParam(defaultValue = "10") int    size,
+            @RequestParam(required = false)    String status,
+            @RequestParam(required = false)    String search) {
+        return ResponseEntity.ok(executionService.findAllPaged(page, size, status, search));
     }
 
     @GetMapping("/{id}")
@@ -39,19 +59,43 @@ public class SimulationRunController {
         return ResponseEntity.ok(executionService.getLogsForRun(id));
     }
 
-    /**
-     * Lance une simulation Gatling.
-     * Crée d'abord le run (commit synchrone), puis déclenche l'async.
-     */
+    // ── Lancement ─────────────────────────────────────────────────────────────
     @PostMapping("/project/{projectId}")
     @PreAuthorize("hasAnyRole('ADMIN','PERF_LEAD','PERF_ENGINEER')")
     public ResponseEntity<SimulationRun> launch(
             @PathVariable Long projectId,
             @RequestBody RunRequest req,
             Principal principal) {
-
         SimulationRun run = executionService.createRun(projectId, req, principal.getName());
         executionService.executeAsync(run.getId(), projectId, req);
         return ResponseEntity.ok(run);
+    }
+
+    // ── Annulation ────────────────────────────────────────────────────────────
+    /**
+     * POST /api/runs/{id}/cancel
+     * Annule un run RUNNING ou PENDING.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN','PERF_LEAD','PERF_ENGINEER')")
+    public ResponseEntity<?> cancel(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(executionService.cancelRun(id));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest()
+                    .body(java.util.Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ── Relancer ──────────────────────────────────────────────────────────────
+    /**
+     * POST /api/runs/{id}/rerun
+     * Crée un nouveau run avec les mêmes paramètres que l'original.
+     */
+    @PostMapping("/{id}/rerun")
+    @PreAuthorize("hasAnyRole('ADMIN','PERF_LEAD','PERF_ENGINEER')")
+    public ResponseEntity<SimulationRun> rerun(
+            @PathVariable Long id, Principal principal) {
+        return ResponseEntity.ok(executionService.rerunRun(id, principal.getName()));
     }
 }

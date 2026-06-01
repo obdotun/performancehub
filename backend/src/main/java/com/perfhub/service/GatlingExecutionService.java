@@ -1,6 +1,7 @@
 package com.perfhub.service;
 
 import com.perfhub.dto.RunRequest;
+import com.perfhub.dto.PagedRunsResponse;
 import com.perfhub.entity.*;
 import com.perfhub.enums.RunStatus;
 import com.perfhub.repository.*;
@@ -18,6 +19,9 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,8 @@ public class GatlingExecutionService {
 
     @Value("${perfhub.storage.reports}")
     private String reportsRoot;
+
+    private final Map<Long, Process> runningProcesses = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Transactional
     public SimulationRun createRun(Long projectId, RunRequest req, String launchedBy) {
@@ -90,6 +96,8 @@ public class GatlingExecutionService {
             log.info(">>> Lancement du processus...");
             Process process = pb.start();
             log.info(">>> Processus PID : {}", process.pid());
+
+            runningProcesses.put(runId, process);
 
             // Lecture et streaming des logs en temps réel
             try (BufferedReader reader = new BufferedReader(
@@ -151,6 +159,7 @@ public class GatlingExecutionService {
                 run.setDurationSeconds(
                         java.time.Duration.between(run.getStartedAt(), run.getFinishedAt()).toSeconds());
             }
+            runningProcesses.remove(runId);
             runRepo.save(run);
             messagingTemplate.convertAndSend(
                     "/topic/runs/" + runId + "/done",
@@ -360,4 +369,90 @@ public class GatlingExecutionService {
                 "/topic/runs/" + run.getId() + "/done",
                 Map.of("status", RunStatus.FAILED.name()));
     }
+
+    /**
+     * Pagination de l'historique des runs avec filtres optionnels.
+     *
+     * @param page   numéro de page (0-based)
+     * @param size   taille de page
+     * @param status filtre statut ("SUCCESS", "FAILED"...) ou null
+     * @param search filtre texte libre ou null
+     */
+    public PagedRunsResponse findAllPaged(int page, int size, String status, String search) {
+        // Normaliser : chaînes vides → null pour que JPQL ignore le filtre
+        String statusParam = (status == null || status.isBlank() || status.equals("TOUS")) ? null : status;
+        String searchParam = (search == null || search.isBlank()) ? null : search;
+
+        Page<SimulationRun> result = runRepo.findAllFiltered(
+                statusParam, searchParam, PageRequest.of(page, size));
+
+        return PagedRunsResponse.builder()
+                .content(result.getContent())
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .first(result.isFirst())
+                .last(result.isLast())
+                .build();
+    }
+
+    /**
+     * Annule un run RUNNING ou PENDING.
+     * Détruit le processus OS associé si disponible.
+     */
+    @Transactional
+    public SimulationRun cancelRun(Long runId) {
+        SimulationRun run = findById(runId);
+
+        if (run.getStatus() != RunStatus.RUNNING && run.getStatus() != RunStatus.PENDING) {
+            throw new IllegalStateException(
+                    "Impossible d'annuler un run en statut : " + run.getStatus());
+        }
+
+        // Tuer le processus OS si disponible
+        Process process = runningProcesses.get(runId);
+        if (process != null && process.isAlive()) {
+            process.destroyForcibly();
+            log.info("Processus du run #{} tué (PID={})", runId, process.pid());
+        }
+
+        run.setStatus(RunStatus.CANCELLED);
+        run.setFinishedAt(LocalDateTime.now());
+        if (run.getStartedAt() != null) {
+            run.setDurationSeconds(
+                    java.time.Duration.between(run.getStartedAt(), run.getFinishedAt()).toSeconds());
+        }
+        run.setErrorMessage("Annulé par l'utilisateur");
+        runRepo.save(run);
+
+        broadcast(runId, "[PerfHub] 🛑 Run annulé par l'utilisateur");
+        messagingTemplate.convertAndSend(
+                "/topic/runs/" + runId + "/done",
+                Map.of("status", RunStatus.CANCELLED.name()));
+
+        log.info("Run #{} annulé", runId);
+        return run;
+    }
+
+    /**
+     * Relanque un run existant avec les mêmes paramètres.
+     * Crée un nouveau run — ne modifie pas l'original.
+     */
+    @Transactional
+    public SimulationRun rerunRun(Long runId, String launchedBy) {
+        SimulationRun original = findById(runId);
+
+        RunRequest req = new RunRequest();
+        req.setSimulationClass(original.getSimulationClass());
+        req.setUsers(original.getUsers());
+        req.setRampDuration(original.getRampDuration());
+
+        SimulationRun newRun = createRun(original.getProject().getId(), req, launchedBy);
+        executeAsync(newRun.getId(), original.getProject().getId(), req);
+
+        log.info("Run #{} relancé → nouveau run #{}", runId, newRun.getId());
+        return newRun;
+    }
+
 }
