@@ -9,17 +9,40 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
-import SearchIcon from '@mui/icons-material/Search'
-import RefreshIcon from '@mui/icons-material/Refresh'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import AssessmentIcon from '@mui/icons-material/Assessment'
-import CloseIcon from '@mui/icons-material/Close'
+import SearchIcon        from '@mui/icons-material/Search'
+import RefreshIcon       from '@mui/icons-material/Refresh'
+import OpenInNewIcon     from '@mui/icons-material/OpenInNew'
+import AssessmentIcon    from '@mui/icons-material/Assessment'
+import CloseIcon         from '@mui/icons-material/Close'
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial'
 import { getRuns } from '../api/runs'
+import { getCampaignsByRun } from '../api/campaigns'
 import StatusChip from '../components/StatusChip'
 import dayjs from 'dayjs'
 
 const STATUS_OPTIONS = ['TOUS', 'SUCCESS', 'FAILED', 'RUNNING', 'PENDING', 'CANCELLED']
+
+/**
+ * Hook : charge les campagnes de chaque run une fois la liste connue.
+ * Retourne un Map<runId, [{id, name}]>
+ */
+function useRunCampaigns(runs) {
+  const [campaignMap, setCampaignMap] = useState(new Map())
+
+  useEffect(() => {
+    if (!runs.length) return
+    const map = new Map()
+    Promise.allSettled(
+      runs.map(r =>
+        getCampaignsByRun(r.id).then(data => {
+          if (Array.isArray(data) && data.length > 0) map.set(r.id, data)
+        })
+      )
+    ).then(() => setCampaignMap(new Map(map)))
+  }, [runs])
+
+  return campaignMap
+}
 
 export default function RunsHistoryPage() {
   const navigate = useNavigate()
@@ -39,6 +62,9 @@ export default function RunsHistoryPage() {
       .finally(() => setLoading(false))
   }
   useEffect(load, [])
+
+  // Charge les campagnes de tous les runs affichés
+  const campaignMap = useRunCampaigns(runs)
 
   const filtered = runs.filter(r => {
     const matchStatus = statusFilter === 'TOUS' || r.status === statusFilter
@@ -73,12 +99,8 @@ export default function RunsHistoryPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<FolderSpecialIcon />}
-            size="small"
-            onClick={() => navigate('/campaigns')}
-          >
+          <Button variant="outlined" startIcon={<FolderSpecialIcon />} size="small"
+            onClick={() => navigate('/campaigns')}>
             Créer une campagne
           </Button>
           <Tooltip title="Rafraîchir">
@@ -93,44 +115,22 @@ export default function RunsHistoryPage() {
       <Card sx={{ mb: 2 }}>
         <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField
-              size="small"
-              placeholder="Rechercher simulation, projet, utilisateur..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              sx={{ minWidth: 300 }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
-                ),
-              }}
-            />
-            <TextField
-              select size="small" label="Statut"
-              value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-              sx={{ minWidth: 140 }}
-            >
+            <TextField size="small" placeholder="Rechercher simulation, projet, utilisateur..."
+              value={search} onChange={e => setSearch(e.target.value)} sx={{ minWidth: 300 }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
+            <TextField select size="small" label="Statut" value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)} sx={{ minWidth: 140 }}>
               {STATUS_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
             </TextField>
-
             <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DatePicker
-                label="Du" value={dateFrom} onChange={setDateFrom}
-                maxDate={dateTo ?? undefined}
-                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
-              />
-              <DatePicker
-                label="Au" value={dateTo} onChange={setDateTo}
-                minDate={dateFrom ?? undefined}
-                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }}
-              />
+              <DatePicker label="Du" value={dateFrom} onChange={setDateFrom} maxDate={dateTo ?? undefined}
+                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }} />
+              <DatePicker label="Au" value={dateTo} onChange={setDateTo} minDate={dateFrom ?? undefined}
+                slotProps={{ textField: { size: 'small', sx: { minWidth: 170 } } }} />
             </LocalizationProvider>
-
             {(dateFrom || dateTo) && (
               <Tooltip title="Effacer les filtres de date">
-                <IconButton size="small" onClick={clearDateFilters}>
-                  <CloseIcon fontSize="small" />
-                </IconButton>
+                <IconButton size="small" onClick={clearDateFilters}><CloseIcon fontSize="small" /></IconButton>
               </Tooltip>
             )}
           </Box>
@@ -146,6 +146,7 @@ export default function RunsHistoryPage() {
                 <TableCell>#</TableCell>
                 <TableCell>PROJET</TableCell>
                 <TableCell>SIMULATION</TableCell>
+                <TableCell>CAMPAGNE</TableCell>
                 <TableCell align="right">REQUÊTES</TableCell>
                 <TableCell align="right">KO</TableCell>
                 <TableCell align="right">TEMPS MOY.</TableCell>
@@ -159,79 +160,103 @@ export default function RunsHistoryPage() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={12} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     Aucune simulation trouvée.
                   </TableCell>
                 </TableRow>
               )}
-              {filtered.map(run => (
-                <TableRow key={run.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/runs/${run.id}`)}>
-                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>#{run.id}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={500} noWrap sx={{ maxWidth: 140 }}>
-                      {run.project?.name ?? '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block', maxWidth: 220 }} noWrap>
-                      {run.simulationClass}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="body2">{run.totalRequests != null ? run.totalRequests.toLocaleString() : '—'}</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    {run.failedRequests != null
-                      ? <Typography variant="body2" color={run.failedRequests > 0 ? 'error.main' : 'success.main'}>
-                          {run.failedRequests.toLocaleString()}
-                        </Typography>
-                      : '—'}
-                  </TableCell>
-                  <TableCell align="right">
-                    {run.meanResponseTime != null
-                      ? <Chip
-                          label={`${run.meanResponseTime} ms`} size="small"
-                          color={run.meanResponseTime < 500 ? 'success' : run.meanResponseTime < 2000 ? 'warning' : 'error'}
-                          variant="outlined"
-                        />
-                      : '—'}
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="caption" color="text.secondary">
-                      {run.durationSeconds != null
-                        ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s`
+              {filtered.map(run => {
+                const campaigns = campaignMap.get(run.id) || []
+                return (
+                  <TableRow key={run.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/runs/${run.id}`)}>
+                    <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>#{run.id}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={500} noWrap sx={{ maxWidth: 140 }}>
+                        {run.project?.name ?? '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block', maxWidth: 220 }} noWrap>
+                        {run.simulationClass}
+                      </Typography>
+                    </TableCell>
+
+                    {/* ── Colonne Campagne ── */}
+                    <TableCell>
+                      {campaigns.length === 0
+                        ? <Typography variant="caption" color="text.disabled">—</Typography>
+                        : <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                            {campaigns.map(c => (
+                              <Tooltip key={c.id} title={c.name}>
+                                <Chip
+                                  icon={<FolderSpecialIcon />}
+                                  label={c.name}
+                                  size="small"
+                                  variant="outlined"
+                                  color="primary"
+                                  sx={{ fontSize: '0.68rem', maxWidth: 140, cursor: 'pointer' }}
+                                  onClick={e => { e.stopPropagation(); navigate(`/campaigns/${c.id}`) }}
+                                />
+                              </Tooltip>
+                            ))}
+                          </Stack>
+                      }
+                    </TableCell>
+
+                    <TableCell align="right">
+                      <Typography variant="body2">{run.totalRequests != null ? run.totalRequests.toLocaleString() : '—'}</Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      {run.failedRequests != null
+                        ? <Typography variant="body2" color={run.failedRequests > 0 ? 'error.main' : 'success.main'}>
+                            {run.failedRequests.toLocaleString()}
+                          </Typography>
                         : '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption" color="text.secondary">{run.launchedBy ?? '—'}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption" color="text.secondary">
-                      {dayjs(run.startedAt).format('DD/MM/YY HH:mm')}
-                    </Typography>
-                  </TableCell>
-                  <TableCell><StatusChip status={run.status} /></TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      {run.reportPath && (
-                        <Tooltip title="Rapport Gatling">
-                          <IconButton size="small" color="primary"
+                    </TableCell>
+                    <TableCell align="right">
+                      {run.meanResponseTime != null
+                        ? <Chip label={`${run.meanResponseTime} ms`} size="small"
+                            color={run.meanResponseTime < 500 ? 'success' : run.meanResponseTime < 2000 ? 'warning' : 'error'}
+                            variant="outlined" />
+                        : '—'}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="caption" color="text.secondary">
+                        {run.durationSeconds != null
+                          ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s`
+                          : '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">{run.launchedBy ?? '—'}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {dayjs(run.startedAt).format('DD/MM/YY HH:mm')}
+                      </Typography>
+                    </TableCell>
+                    <TableCell><StatusChip status={run.status} /></TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        {run.reportPath && (
+                          <Tooltip title="Rapport Gatling">
+                            <IconButton size="small" color="primary"
+                              onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
+                              <AssessmentIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <Tooltip title="Voir les logs">
+                          <IconButton size="small"
                             onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
-                            <AssessmentIcon fontSize="small" />
+                            <OpenInNewIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                      )}
-                      <Tooltip title="Voir les logs">
-                        <IconButton size="small"
-                          onClick={e => { e.stopPropagation(); navigate(`/runs/${run.id}`) }}>
-                          <OpenInNewIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </TableContainer>

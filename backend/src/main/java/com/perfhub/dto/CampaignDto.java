@@ -10,15 +10,15 @@ import java.util.List;
 @Data
 @Builder
 public class CampaignDto {
-    private Long             id;
-    private String           name;
-    private String           description;
-    private CampaignStatus   status;
-    private LocalDate        targetReleaseDate;
-    private String           createdBy;
-    private LocalDateTime    createdAt;
-    private LocalDateTime    updatedAt;
-    private List<RunSummaryDto> runs;
+    private Long           id;
+    private String         name;
+    private String         description;
+    private CampaignStatus status;
+    private LocalDate      targetReleaseDate;
+    private String         createdBy;
+    private LocalDateTime  createdAt;
+    private LocalDateTime  updatedAt;
+    private List<RunSummaryDto>        runs;
     private List<AttachmentSummaryDto> attachments;
 
     // Stats calculées
@@ -48,5 +48,15 @@ public class CampaignDto {
         private String uploadedBy;
         private String uploadedAt;
         private String downloadUrl;
+    }
+
+    /**
+     * Référence légère d'une campagne — utilisée pour afficher
+     * le badge campagne dans l'historique des runs.
+     */
+    @Data @Builder
+    public static class CampaignRefDto {
+        private Long   id;
+        private String name;
     }
 }

@@ -20,7 +20,6 @@ public class SimulationRun {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Sérialise uniquement id et name du projet pour éviter la boucle infinie
     @JsonIgnoreProperties({"runs", "localPath", "hibernateLazyInitializer", "handler"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id", nullable = false)
@@ -41,10 +40,7 @@ public class SimulationRun {
     private Long meanResponseTime;
     private String launchedBy;
 
-    /** Nombre d'utilisateurs configurés pour ce run */
     private Integer users;
-
-    /** Durée de montée en charge en secondes */
     private Integer rampDuration;
 
     @Column(nullable = false, updatable = false)
@@ -55,6 +51,14 @@ public class SimulationRun {
     @JsonIgnore
     @OneToMany(mappedBy = "run", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<RunLog> logs;
+
+    /**
+     * Relation inverse — côté Campaign (ManyToMany).
+     * JsonIgnore pour éviter la boucle infinie lors de la sérialisation.
+     */
+    @JsonIgnore
+    @ManyToMany(mappedBy = "runs", fetch = FetchType.LAZY)
+    private List<Campaign> campaigns;
 
     @PrePersist
     void prePersist() { this.startedAt = LocalDateTime.now(); }

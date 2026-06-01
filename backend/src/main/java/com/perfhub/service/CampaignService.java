@@ -32,6 +32,9 @@ public class CampaignService {
     @Value("${perfhub.storage.root}")
     private String storageRoot;
 
+    /** Taille maximale autorisée pour les pièces jointes : 20 Mo */
+    private static final long MAX_FILE_SIZE_BYTES = 20L * 1024 * 1024;
+
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
@@ -45,7 +48,7 @@ public class CampaignService {
         Campaign campaign = Campaign.builder()
                 .name(req.getName())
                 .description(req.getDescription())
-                .status(req.getStatus() != null ? req.getStatus() : CampaignStatus.IN_PROGRESS)
+                .status(req.getStatus() != null ? req.getStatus() : CampaignStatus.DRAFT)
                 .targetReleaseDate(req.getTargetReleaseDate())
                 .createdBy(createdBy)
                 .runs(runs)
@@ -74,19 +77,51 @@ public class CampaignService {
         if (req.getStatus()            != null) campaign.setStatus(req.getStatus());
         if (req.getTargetReleaseDate() != null) campaign.setTargetReleaseDate(req.getTargetReleaseDate());
 
+        // Mise à jour complète des runs si fournis
         if (req.getRunIds() != null) {
             List<SimulationRun> runs = runRepo.findAllById(req.getRunIds());
             campaign.getRuns().clear();
             campaign.getRuns().addAll(runs);
+            log.info("Campagne #{} — {} run(s) mis à jour", id, runs.size());
         }
 
         return toDto(campaignRepo.save(campaign));
     }
 
+    /**
+     * Ajoute un run à une campagne existante sans remplacer les autres.
+     */
+    @Transactional
+    public CampaignDto addRun(Long campaignId, Long runId) {
+        Campaign campaign = getCampaign(campaignId);
+        SimulationRun run = runRepo.findById(runId)
+                .orElseThrow(() -> new IllegalArgumentException("Run introuvable : " + runId));
+
+        boolean alreadyPresent = campaign.getRuns().stream()
+                .anyMatch(r -> r.getId().equals(runId));
+        if (!alreadyPresent) {
+            campaign.getRuns().add(run);
+            campaignRepo.save(campaign);
+            log.info("Run #{} ajouté à la campagne #{}", runId, campaignId);
+        }
+        return toDto(campaign);
+    }
+
+    /**
+     * Retire un run d'une campagne.
+     */
+    @Transactional
+    public CampaignDto removeRun(Long campaignId, Long runId) {
+        Campaign campaign = getCampaign(campaignId);
+        campaign.getRuns().removeIf(r -> r.getId().equals(runId));
+        campaignRepo.save(campaign);
+        log.info("Run #{} retiré de la campagne #{}", runId, campaignId);
+        return toDto(campaign);
+    }
+
     @Transactional
     public void delete(Long id) {
         Campaign campaign = getCampaign(id);
-        // Supprimer les fichiers physiques
         campaign.getAttachments().forEach(a -> deleteFile(a.getStoredPath()));
         campaignRepo.deleteById(id);
         log.info("Campagne #{} supprimée", id);
@@ -97,6 +132,13 @@ public class CampaignService {
     @Transactional
     public CampaignDto.AttachmentSummaryDto addAttachment(
             Long campaignId, MultipartFile file, String note, String uploadedBy) throws IOException {
+
+        // Validation taille fichier
+        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException(
+                    String.format("Fichier trop volumineux : %.1f Mo (max 20 Mo)",
+                            file.getSize() / (1024.0 * 1024.0)));
+        }
 
         Campaign campaign = getCampaign(campaignId);
 
@@ -137,6 +179,21 @@ public class CampaignService {
                 .orElseThrow(() -> new IllegalArgumentException("Pièce jointe introuvable : " + attachmentId));
         deleteFile(a.getStoredPath());
         attachmentRepo.deleteById(attachmentId);
+    }
+
+    // ── Campagnes d'un run ───────────────────────────────────────────────────
+
+    /**
+     * Retourne les campagnes auxquelles un run est rattaché.
+     * Utilisé par le frontend pour afficher le badge dans l'historique.
+     */
+    public List<CampaignDto.CampaignRefDto> findCampaignsByRunId(Long runId) {
+        return runRepo.findCampaignsByRunId(runId).stream()
+                .map(row -> CampaignDto.CampaignRefDto.builder()
+                        .id(((Number) row[0]).longValue())
+                        .name((String) row[1])
+                        .build())
+                .toList();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
